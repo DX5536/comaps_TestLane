@@ -252,3 +252,41 @@ UNIT_TEST(SelectRecommendedLanes)
   TEST_EQUAL(routeSegments[2].GetTurn().m_lanes[1].recommendedWay, LaneWay::Right, ());
 }
 }  // namespace routing::turns::lanes::test
+
+namespace routing::turns::lanes::test
+{
+// Straight through a 3-lane junction, then a left turn soon after:
+// only the leftmost straight lane should be recommended.
+UNIT_TEST(MinimizeLaneChanges_PrepareForLeftTurn)
+{
+  std::vector<TurnItem> turns = {{1, CarDirection::GoStraight},
+                                 {2, CarDirection::TurnLeft},
+                                 {3, CarDirection::ReachedYourDestination}};
+  turns[0].m_lanes.push_back({{LaneWay::Through}});
+  turns[0].m_lanes.push_back({{LaneWay::Through}});
+  turns[0].m_lanes.push_back({{LaneWay::Through, LaneWay::Right}});
+  std::vector<RouteSegment> routeSegments;
+  RouteSegmentsFrom({}, {}, turns, {}, routeSegments);
+  SelectRecommendedLanes(routeSegments);
+  auto const & l = routeSegments[0].GetTurn().m_lanes;
+  TEST_EQUAL(l[0].recommendedWay, LaneWay::Through, ());
+  TEST_EQUAL(l[1].recommendedWay, LaneWay::None, ());
+  TEST_EQUAL(l[2].recommendedWay, LaneWay::None, ());
+}
+
+UNIT_TEST(MinimizeLaneChanges_PrepareForRightTurn)
+{
+  std::vector<TurnItem> turns = {{1, CarDirection::GoStraight},
+                                 {2, CarDirection::TurnRight},
+                                 {3, CarDirection::ReachedYourDestination}};
+  turns[0].m_lanes.push_back({{LaneWay::Left}});
+  turns[0].m_lanes.push_back({{LaneWay::Through}});
+  turns[0].m_lanes.push_back({{LaneWay::Through}});
+  std::vector<RouteSegment> routeSegments;
+  RouteSegmentsFrom({}, {}, turns, {}, routeSegments);
+  SelectRecommendedLanes(routeSegments);
+  auto const & l = routeSegments[0].GetTurn().m_lanes;
+  TEST_EQUAL(l[1].recommendedWay, LaneWay::None, ());
+  TEST_EQUAL(l[2].recommendedWay, LaneWay::Through, ());
+}
+}  // namespace routing::turns::lanes::test
