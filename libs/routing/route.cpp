@@ -311,6 +311,28 @@ void Route::GetNearestTurn(double & distanceToTurnMeters, TurnItem & turn) const
   distanceToTurnMeters = m_poly.GetDistanceM(m_poly.GetCurrentIter(), m_poly.GetIterToIndex(turn.m_index));
 }
 
+bool Route::GetNearestLanes(double & distanceToLanesMeters, turns::lanes::LanesInfo & lanes) const
+{
+  if (!IsValid())
+    return false;
+
+  size_t const curIdx = m_poly.GetCurrentIter().m_ind;
+  for (size_t i = curIdx; i < m_routeSegments.size(); ++i)
+  {
+    TurnItem const & turn = m_routeSegments[i].GetTurn();
+    if (!turn.m_lanes.empty())
+    {
+      // The junction of segment |i| is point |i| + 1 of |m_poly|.
+      lanes = turn.m_lanes;
+      distanceToLanesMeters = m_poly.GetDistanceM(m_poly.GetCurrentIter(), m_poly.GetIterToIndex(i + 1));
+      return true;
+    }
+    if (IsNormalTurn(turn))
+      return false;
+  }
+  return false;
+}
+
 optional<turns::TurnItem> Route::GetCurrentIteratorTurn() const
 {
   if (!IsValid())

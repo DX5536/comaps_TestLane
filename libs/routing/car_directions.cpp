@@ -75,6 +75,7 @@ void FixupCarTurns(vector<RouteSegment> & routeSegments)
     {
       ++exitNum;
       routeSegments[idx].ClearTurn();
+      routeSegments[idx].ClearTurnLanes();
       continue;
     }
     else if (t.m_turn == CarDirection::LeaveRoundAbout)
@@ -97,7 +98,10 @@ void FixupCarTurns(vector<RouteSegment> & routeSegments)
       auto const & junction = routeSegments[idx].GetJunction();
       auto const & prevJunction = routeSegments[idx - 1].GetJunction();
       if (mercator::DistanceOnEarth(junction.GetPoint(), prevJunction.GetPoint()) < kMergeDistMeters)
+      {
         routeSegments[idx - 1].ClearTurn();
+        routeSegments[idx - 1].ClearTurnLanes();
+      }
     }
   }
   turns::lanes::SelectRecommendedLanes(routeSegments);
@@ -105,6 +109,9 @@ void FixupCarTurns(vector<RouteSegment> & routeSegments)
 
 void GetTurnDirectionBasic(IRoutingResult const & result, size_t const outgoingSegmentIndex,
                            NumMwmIds const & numMwmIds, RoutingSettings const & vehicleSettings, TurnItem & turn);
+
+/// \returns true if the route passes straight through a junction whose ingoing way has lane data.
+bool IsLaneGuidanceJunction(IRoutingResult const & result, size_t outgoingSegmentIndex);
 
 size_t CarDirectionsEngine::GetTurnDirection(IRoutingResult const & result, size_t const outgoingSegmentIndex,
                                              NumMwmIds const & numMwmIds, RoutingSettings const & vehicleSettings,
@@ -137,14 +144,66 @@ size_t CarDirectionsEngine::GetTurnDirection(IRoutingResult const & result, size
     GetTurnDirectionBasic(result, outgoingSegmentIndex, numMwmIds, vehicleSettings, turnItem);
 
   // Lane information.
+  auto const & loadedSegments = result.GetSegments();
+  auto const & ingoingSegment = loadedSegments[outgoingSegmentIndex - 1];
   if (turnItem.m_turn != CarDirection::None)
   {
-    auto const & loadedSegments = result.GetSegments();
-    auto const & ingoingSegment = loadedSegments[outgoingSegmentIndex - 1];
     turnItem.m_lanes = ingoingSegment.m_lanes;
+  }
+  else if (skipTurnSegments == 0 && IsLaneGuidanceJunction(result, outgoingSegmentIndex))
+  {
+    // No instruction is needed here, but the lanes still tell the driver which lanes lead on.
+    turnItem.m_lanes = ingoingSegment.m_lanes;
+    CarDirection const direction =
+        IntermediateDirection(CalcTurnAngle(result, outgoingSegmentIndex, numMwmIds, vehicleSettings));
+    if (!lanes::SetRecommendedLanes(direction, turnItem.m_lanes))
+      turnItem.m_lanes.clear();
   }
 
   return skipTurnSegments;
+}
+
+namespace
+{
+double PathLengthMeters(LoadedPathSegment const & segment)
+{
+  double length = 0.0;
+  for (size_t i = 1; i < segment.m_path.size(); ++i)
+    length += mercator::DistanceOnEarth(segment.m_path[i - 1].GetPoint(), segment.m_path[i].GetPoint());
+  return length;
+}
+}  // namespace
+
+bool IsLaneGuidanceJunction(IRoutingResult const & result, size_t const outgoingSegmentIndex)
+{
+  // The way with the lanes may end a few meters before the junction, e.g. at the stop line.
+  double constexpr kMaxStubLengthMeters = 30.0;
+
+  auto const & loadedSegments = result.GetSegments();
+  auto const & ingoing = loadedSegments[outgoingSegmentIndex - 1];
+  auto const & outgoing = loadedSegments[outgoingSegmentIndex];
+  if (ingoing.m_lanes.empty() || ingoing.m_onRoundabout || outgoing.m_onRoundabout)
+    return false;
+  if (ingoing.m_segmentRange.IsEmpty() || ingoing.m_segments.empty() || outgoing.m_segments.empty())
+    return false;
+
+  // turn:lanes of a way describe the junction where the way ends.
+  uint32_t const inFeature = ingoing.m_segments.back().GetFeatureId();
+  uint32_t const outFeature = outgoing.m_segments.front().GetFeatureId();
+  if (inFeature == outFeature)
+    return false;
+
+  // Only real junctions: some other road must leave here (not counting a U-turn onto the ingoing road).
+  TurnCandidates nodes;
+  size_t ingoingCount = 0;
+  result.GetPossibleTurns(ingoing.m_segmentRange, ingoing.m_path.back().GetPoint(), ingoingCount, nodes);
+  for (auto const & candidate : nodes.candidates)
+  {
+    uint32_t const feature = candidate.m_segment.GetFeatureId();
+    if (feature != inFeature && feature != outFeature)
+      return true;
+  }
+  return outgoing.m_lanes.empty() && PathLengthMeters(outgoing) < kMaxStubLengthMeters;
 }
 
 /*!

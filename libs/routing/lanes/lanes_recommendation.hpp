@@ -31,11 +31,17 @@ struct LaneChangeSettings
 
 LaneChangeSettings & GetLaneChangeSettings();
 
+/// Marks the lanes of |lanesInfo| which lead to |carDirection|.
+/// \returns false if no lane matches, in which case the lanes should not be shown.
+bool SetRecommendedLanes(CarDirection carDirection, LanesInfo & lanesInfo);
+
 /// Selects lanes which are recommended for an end user.
+/// Lanes of junctions passed without an instruction (turn is None) are expected to be already recommended.
 void SelectRecommendedLanes(std::vector<RouteSegment> & routeSegments);
 
-/// Narrows multiple recommended lanes down to one, picking the lane on the side of the
-/// next maneuver so the driver doesn't have to cross lanes later.
+/// Narrows multiple recommended lanes down to one. Walks the route backwards and picks, at every
+/// junction with lane data, the lane that lines up with the lane needed at the next junction
+/// (or with the side of the next maneuver), so the driver doesn't have to cross lanes later.
 void MinimizeLaneChanges(std::vector<RouteSegment> & routeSegments, LaneChangeSettings const & settings);
 
 // Keep signatures in the header for testing purposes

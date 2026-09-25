@@ -13,6 +13,10 @@ on:
         description: "Gradle ABI flag(s)"
         type: string
         default: "arm64"   # Modern phones (Samsung etc.). Use "arm32 -Parm64" for both ARM ABIs.
+      run_tests:
+        description: "Also build and run the lane unit tests (after the APK is uploaded)"
+        type: boolean
+        default: true
   push:
     tags:
       - "apk-*"   # Pushing a tag like apk-1 also builds FdroidBeta for arm64.
@@ -100,3 +104,15 @@ jobs:
           name: CoMaps-${{ env.VARIANT }}-${{ env.ABI }}
           path: android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
+
+      - name: Lane unit tests
+        if: ${{ inputs.run_tests != false }}
+        shell: bash
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: |
+          source .venv/bin/activate
+          cmake -S . -B build_tests -G Ninja -DCMAKE_BUILD_TYPE=Release -DSKIP_QT_GUI=ON
+          cmake --build build_tests --target routing_tests
+          ./build_tests/routing_tests --filter='Lane|lane'

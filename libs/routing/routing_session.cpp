@@ -520,9 +520,17 @@ void RoutingSession::GetRouteFollowingInfo(FollowingInfo & info) const
   info.m_completionPercent = GetCompletionPercent();
 
   // Lane information.
+  // Lanes of junctions passed straight on (without an instruction) are shown, too.
   info.m_lanes.clear();
-  if (distanceToTurnMeters < kShowLanesMinDistInMeters || m_route->GetCurrentTimeToNearestTurnSec() < 60.0)
-    info.m_lanes = turn.m_lanes;
+  double distanceToLanesMeters = 0.0;
+  turns::lanes::LanesInfo lanes;
+  if (m_route->GetNearestLanes(distanceToLanesMeters, lanes))
+  {
+    bool const lanesOfNearestTurn = distanceToLanesMeters + 1.0 >= distanceToTurnMeters;
+    if (distanceToLanesMeters < kShowLanesMinDistInMeters ||
+        (lanesOfNearestTurn && m_route->GetCurrentTimeToNearestTurnSec() < 60.0))
+      info.m_lanes = std::move(lanes);
+  }
 
   // Pedestrian info.
   info.m_pedestrianTurn =
