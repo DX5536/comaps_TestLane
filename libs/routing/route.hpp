@@ -379,6 +379,11 @@ public:
   /// \param turn is information about the nearest turn.
   void GetNearestTurn(double & distanceToTurnMeters, turns::TurnItem & turn) const;
 
+  /// \brief Extracts lanes of the nearest junction with lane data, up to and including the nearest turn.
+  /// Junctions passed straight on (without a turn instruction) are taken into account, too.
+  /// \returns false if there are no lanes before the nearest turn.
+  bool GetNearestLanes(double & distanceToLanesMeters, turns::lanes::LanesInfo & lanes) const;
+
   /// \returns information about turn from RouteSegment according to current iterator
   /// set with MoveIterator() method. If it's not possible returns nullopt.
   std::optional<turns::TurnItem> GetCurrentIteratorTurn() const;
