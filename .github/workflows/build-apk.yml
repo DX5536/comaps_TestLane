@@ -1,0 +1,102 @@
+name: Build APK
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "Build variant"
+        type: choice
+        default: FdroidBeta
+        options:
+          - FdroidBeta   # Optimized build, signed with the debug key, installs as "CoMaps Test".
+          - FdroidDebug  # Debuggable build (HWASan disabled), installs as "CoMaps Debug".
+      abi:
+        description: "Gradle ABI flag(s)"
+        type: string
+        default: "arm64"   # Modern phones (Samsung etc.). Use "arm32 -Parm64" for both ARM ABIs.
+  push:
+    tags:
+      - "apk-*"   # Pushing a tag like apk-1 also builds FdroidBeta for arm64.
+
+env:
+  VARIANT: ${{ inputs.variant || 'FdroidBeta' }}
+  ABI: ${{ inputs.abi || 'arm64' }}
+  SKIP_GENERATE_SERBIAN_LATIN_STRINGS: 1
+
+jobs:
+  build:
+    name: Build ${{ inputs.variant || 'FdroidBeta' }} APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - name: Free disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/local/share/powershell
+          df -h /
+
+      - name: Install build tools and dependencies
+        shell: bash
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build \
+            qt6-base-dev qt6-declarative-dev qt6-positioning-dev libqt6svg6-dev \
+            optipng jq curl python3-venv \
+            libfreetype-dev libharfbuzz-dev libicu-dev zlib1g-dev \
+            libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+          cmake --version
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install Android CMake and NDK
+        shell: bash
+        run: |
+          # 3party/glaze requires CMake 3.31+; build.gradle.kts asks for "3.31.0+".
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "cmake;4.1.2" "ndk;28.2.13676358"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Parallel submodules checkout
+        shell: bash
+        run: git submodule update --depth 1 --init --recursive --jobs=$(($(nproc) * 20))
+
+      - name: Cache world map
+        uses: actions/cache@v4
+        with:
+          path: data/world_mwm
+          key: world-mwm-${{ hashFiles('data/countries.txt') }}
+
+      - name: Configure repository
+        shell: bash
+        run: ./configure.sh
+
+      - name: Configure ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ env.VARIANT }}-${{ env.ABI }}
+          max-size: 2G
+
+      - name: Compile
+        shell: bash
+        working-directory: android
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: |
+          source ../.venv/bin/activate
+          ./gradlew --no-daemon -P${ABI} -PdisableHWAsan assemble${VARIANT}
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CoMaps-${{ env.VARIANT }}-${{ env.ABI }}
+          path: android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error

@@ -35,6 +35,8 @@ android {
                     "-DANDROID_STL=c++_static",
                     "-DSKIP_TESTS=ON",
                     "-DSKIP_TOOLS=ON",
+                    // CMake 4 rejects subprojects declaring cmake_minimum_required < 3.5.
+                    "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
                     "-DNJOBS=${project.findProperty("njobs") as? String ?: ""}",
                     "-DUSE_PCH=${project.getPropertyValueForCMake("enablePCH")}",
                     "-DENABLE_TRACE=${project.getPropertyValueForCMake("enableTrace")}",
@@ -83,7 +85,8 @@ android {
 
     externalNativeBuild {
         cmake {
-            version = "3.22.1+"
+            // 3party/glaze requires CMake 3.31+.
+            version = "3.31.0+"
             path = File("../../CMakeLists.txt")
         }
     }
